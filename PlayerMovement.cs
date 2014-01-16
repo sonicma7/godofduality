@@ -6,115 +6,154 @@ public class PlayerMovement : MonoBehaviour {
 	public Vector3 playerStart = new Vector3(10.0f, 5.0f, -3.0f);
 	public float playerGround = 0.0f;
 	public float playerSpeed = 10.0f;
+	public float playerDampening = 0.5f;
+	public float wallSlideSpeed = 5.0f;
 	public float rotationSpeed = 5.0f;
-	public float gravity = 9.8f;
-	public float jumpHeight = 10.0f;
-	public float jumpSpeed = 20.0f;
+	public float jumpForce = 80.0f;
+	public float wallJumpHeight = 40.0f;
+	public float airDampening = 0.5f;
 	public int jumpCount = 0;
-	public bool jumpFlag = false;
 	public bool canJump = true;
 	public bool jumpEnd = false;
-	public float secondJumpStartHeight;
-	public float secondJumpEndHeight;
+	public float distToGround;
+	public float distToWall;
+	public bool onWall = false;
+	public float maxSpeed = 10.0f;
+	public Vector2 currSpeed;
 		
 	// Use this for initialization
 	void Start () {
 		transform.position = playerStart;
+		currSpeed = Vector2.zero;
+		distToGround = collider.bounds.extents.y;
+		distToWall = collider.bounds.extents.x;;
 	}
 	
 	// Update is called once per frame
 	void Update () {
+		//getSpeed();
 		//Get values for movement
 		float horMove = Input.GetAxisRaw("Horizontal");
 		float vertMove = Input.GetAxisRaw("Vertical");
 		float jumpMove = Input.GetAxisRaw("Jump");
-			
+		
+		Vector3 forward = GameObject.Find("MCam").transform.TransformDirection(Vector3.forward);
+		forward.y = 0f;
+		forward = forward.normalized;
+		Vector3 right = new Vector3(forward.z, 0.0f, -forward.x);
+		
 		//Get movement direction
-		Vector3 moveDir = new Vector3(horMove, 0, vertMove);
+		Vector3 moveDir = (horMove * right + vertMove * forward);
 		//Move Character
-		transform.Translate(transform.right * Input.GetAxis("Horizontal") * playerSpeed * -1 * Time.deltaTime);
-		transform.Translate(transform.forward * Input.GetAxis("Vertical") * playerSpeed * Time.deltaTime);
+		currSpeed.x = Mathf.Lerp(rigidbody.velocity.x, moveDir.x * playerSpeed, playerDampening);
+		currSpeed.y = Mathf.Lerp(rigidbody.velocity.z, moveDir.z * playerSpeed, playerDampening);
+		//currSpeed.x = rigidbody.velocity.x;
+		//currSpeed.y = rigidbody.velocity.z;
+		Vector3 tranPos = new Vector3( moveDir.x * playerSpeed, 0, moveDir.z * playerSpeed ) * Time.deltaTime;
 		
-		//Turn character towards movement
-		if( moveDir != Vector3.zero ){
-			Quaternion newRotate = Quaternion.LookRotation(moveDir);
-			transform.rotation = Quaternion.Slerp(transform.rotation, newRotate, rotationSpeed * Time.deltaTime);
+		if( !onWall || isGrounded() ){
+			//if( currSpeed.magnitude < maxSpeed ){
+				if( isGrounded() ){
+					//rigidbody.velocity = (moveDir * playerSpeed); 
+					//transform.position += (moveDir * playerSpeed * Time.deltaTime);
+					//rigidbody.AddForce(tranPos, ForceMode.Impulse);
+					transform.Translate(tranPos, Space.World);
+				}
+				else{
+					//rigidbody.velocity = (moveDir * playerSpeed * airDampening);
+					//rigidbody.AddForce(tranPos * airDampening, ForceMode.Impulse);
+					//transform.position += (moveDir * playerSpeed * airDampening * Time.deltaTime);
+					transform.Translate(tranPos * airDampening, Space.World);
+				}
+			//}
+		
+			//Turn character towards movement
+			if( moveDir != Vector3.zero ){
+				Quaternion newRotate = Quaternion.LookRotation(moveDir);
+				transform.rotation = Quaternion.Slerp(transform.rotation, newRotate, rotationSpeed * Time.deltaTime);
+			}
+		}
+		else{
+			transform.position += (Vector3.down * wallSlideSpeed * Time.deltaTime);
 		}
 		
-		//Check for max jump height based on number of jumps
-		//If max height is reached then remove ability to jump
-		if( transform.position.y >= jumpHeight && jumpCount == 0 ){
-			canJump = false;
+		if( onWall ){
+			jumpCount = 1;
 		}
-		else if( transform.position.y >= secondJumpEndHeight && jumpCount == 1 ){
-			canJump = false;
-		}
-		if( jumpCount == 2 ){
-			canJump = false;
-		}
-		
-		//Reset jump ability when the player hits the ground
-		if( transform.position.y < 3.0f ){
-			canJump = true;
+		if( isGrounded() ){
 			jumpCount = 0;
 		}
 		
-		if( ( transform.position.y > 3.0f && jumpMove == 0.0f ) && jumpEnd == true ){
-			jumpCount++;
-			if( jumpCount == 1 ){
-				secondJumpStartHeight = 0.0f;
-				secondJumpEndHeight = 20.0f;
-			}
+		if( jumpMove == 0.0f ){
+			jumpEnd = true;
 			if( jumpCount < 2 ){
 				canJump = true;
 			}
-			jumpEnd = false;
 		}
 		
-		if( jumpCount < 2 && jumpMove != 0.0f ){
-			if( canJump == true ){
-				jumpFlag = true; 
-				if( secondJumpStartHeight == 0.0f && jumpCount == 1){
-					secondJumpStartHeight = transform.position.y;
-					secondJumpEndHeight = secondJumpStartHeight + 10.0f;
-				}
-				jumpEnd = true;
-			}
-			else{
-				jumpFlag = false;
-			}
-		}		
-		else{
-			jumpFlag = false;
+		if( jumpMove != 0.0f && jumpEnd == false ){
+			canJump = false;
 		}
 		
-/*		if( transform.position.y != 0.0f && jumpFlag == false ){
-			Vector3 newHeight = transform.up * -1 * gravity * Time.deltaTime;
-			if( transform.position.y < newHeight.y ){
-				transform.Translate(0.0f, transform.position.y * -1, 0.0f);
-			}
-			else{
-				transform.Translate(newHeight);
-			}
-		}*/
-		if( jumpFlag == true ){
-			Vector3 newHeight = transform.up * jumpSpeed * Time.deltaTime;
-			if( jumpCount == 0 ){
-				if( ( newHeight.y + transform.position.y ) > jumpHeight ){
-					transform.Translate(0.0f, jumpHeight - transform.position.y, 0.0f);
+		if( canJump == true && ( jumpCount == 0 || jumpCount == 1 ) ){
+			if( jumpMove != 0.0f ){
+				Vector3 bck = transform.TransformDirection(Vector3.back);
+				if( !onWall ){
+					//rigidbody.velocity = (Vector3.up * jumpForce);
+					rigidbody.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
 				}
 				else{
-					transform.Translate(newHeight);
+					//rigidbody.velocity = (Vector3.up * jumpForce + bck * wallJumpHeight);
+					rigidbody.AddForce(Vector3.up * jumpForce + bck * wallJumpHeight, ForceMode.Impulse);
+					onWall = false;
 				}
-			}
-			else if( jumpCount == 1 && secondJumpStartHeight > 0.0f ){
-				if( ( newHeight.y + transform.position.y ) > secondJumpEndHeight ){
-					transform.Translate(0.0f, secondJumpEndHeight - transform.position.y, 0.0f);
-				}
-				else{
-					transform.Translate(newHeight);
-				}
+				jumpEnd = false;
+				jumpCount++;
 			}
 		}
 	}
+	
+	bool isGrounded(){
+		return Physics.Raycast(transform.position, Vector3.down, distToGround + 0.1f);
+	}
+	
+	bool isWalled(){
+		Vector3 fwd = transform.TransformDirection( Vector3.forward );
+		
+		return Physics.Raycast(transform.position, fwd, distToWall + 0.1f);
+	}
+	
+/*	void getSpeed(){
+		currSpeed = new Vector2(rigidbody.velocity.x, rigidbody.velocity.z);
+		if( currSpeed.magnitude < 0.1 )
+			currSpeed = Vector2.zero;
+	}*/
+	
+	void OnTriggerEnter( Collider collider ){
+		if( collider.gameObject.tag == "Wall" ){
+			onWall = true;
+			rigidbody.velocity = Vector3.zero;
+			rigidbody.useGravity = false;
+		}
+		if( collider.gameObject.tag == "Floor" ){
+			onWall = false;
+			rigidbody.useGravity = true;
+		}
+	}
+	
+	void OnTriggerExit( Collider collider ){
+		if( collider.gameObject.tag == "Wall" ){
+			onWall = false;
+			rigidbody.useGravity = true;
+		}
+	}
+	
+/*	void OnCollisionEnter( Collision collision ){
+		if( collision.gameObject.tag == "Wall" ){
+			rigidbody.isKinematic = true;
+		}
+		if( collision.gameObject.tag == "Floor" ){
+			rigidbody.isKinematic = false;
+		}
+	}*/
 }
